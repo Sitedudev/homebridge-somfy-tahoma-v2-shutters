@@ -1,0 +1,74 @@
+{
+  "pluginAlias": "TahomaShutters",
+  "pluginType": "platform",
+  "title": "homebridge-somfy-tahoma-v2-shutters configuration",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "namePrefix": {
+        "title": "Préfixe nom des volets",
+        "type": "string",
+        "default": "Volet"
+      },
+      "ip": {
+        "title": "Adresse IP de la box (host:port)",
+        "type": "string",
+        "description": "Ex: 192.168.1.10:443"
+      },
+      "token": {
+        "title": "Token développeur (Bearer)",
+        "type": "string"
+      },
+      "pollingInterval": {
+        "title": "Intervalle de polling (secondes)",
+        "type": "integer",
+        "default": 10,
+        "minimum": 5,
+        "maximum": 3600
+      },
+      "logState": {
+        "title": "Activer les logs d'état",
+        "type": "boolean",
+        "default": true
+      },
+      "logInterval": {
+        "title": "Intervalle logs (secondes)",
+        "type": "integer",
+        "default": 30,
+        "minimum": 5,
+        "maximum": 3600
+      },
+      "filters": {
+        "title": "Filtres d'accessoires",
+        "type": "object",
+        "properties": {
+          "excludeDeviceURLs": {
+            "title": "Exclure ces deviceURL (liste exacte)",
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ex: [\"io://1234-.../12345678\"]"
+          },
+          "excludeLabels": {
+            "title": "Exclure par label (partiel)",
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Exclut tout device dont le label contient une des valeurs."
+          },
+          "excludeKeywords": {
+            "title": "Mots-clés pour exclure (avancé)",
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["garage", "gate", "portail", "awning", "light", "switch", "remote", "sensor", "plug"]
+          }
+        },
+        "additionalProperties": false
+      },
+      "debugMode": {
+        "title": "Mode debug (affiche les widgets détectés)",
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "required": ["ip", "token"]
+  }
+}

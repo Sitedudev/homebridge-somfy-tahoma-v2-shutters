@@ -1,0 +1,52 @@
+{
+  "name": "homebridge-somfy-tahoma-v2-shutters",
+  "version": "0.0.11",
+  "description": "Homebridge platform to control Somfy Tahoma RollerShutter devices (shutters) - automatic discovery, position support and polling with Tahoma V2",
+  "main": "index.js",
+  "engines": {
+    "node": ">=14.0.0",
+    "homebridge": ">=1.8.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "tahoma",
+    "somfy",
+    "shutter",
+    "roller",
+    "windowcovering"
+  ],
+  "author": "Rémy D",
+  "license": "MIT",
+  "homepage": "https://github.com/Sitedudev/homebridge-somfy-tahoma-v2-shutters#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sitedudev/homebridge-somfy-tahoma-v2-shutters"
+  },
+  "bugs": {
+    "url": "https://github.com/Sitedudev/homebridge-somfy-tahoma-v2-shutters/issues"
+  },
+  "platforms": [
+    {
+      "platform": "TahomaShutters",
+      "name": "Volets",
+      "ip": "192.168.1.10:443",
+      "token": "TON_TOKEN",
+      "pollingInterval": 10,
+      "logState": true,
+      "filters": {
+        "excludeDeviceURLs": [
+          "io://1234-4567-8901/11111111",
+          "io://1234-4567-8901/22222222"
+        ],
+        "excludeLabels": [
+          "volet garage", "terrasse"
+        ]
+      },
+      "debugMode": false
+    }
+  ],
+  "dependencies": {
+    "axios": "^1.5.0"
+  }
+}
