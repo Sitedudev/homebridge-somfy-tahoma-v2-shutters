@@ -1,6 +1,6 @@
 {
   "name": "homebridge-somfy-tahoma-v2-shutters",
-  "version": "0.0.11",
+  "version": "0.1.0",
   "description": "Homebridge platform to control Somfy Tahoma RollerShutter devices (shutters) - automatic discovery, position support and polling with Tahoma V2",
   "main": "index.js",
   "engines": {

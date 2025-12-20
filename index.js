@@ -34,6 +34,7 @@ class SomfyShutterPlatform {
     this.accessoriesList = [];
     this.currentExecutions = {}; // map deviceURL -> execId
     this.lastPositions = {};     // map deviceURL -> last known position
+    this.stableCounters = {}; // deviceURL -> compteur
 
     if (!this.config.ip || !this.config.token) {
       this.log.error("[TahomaShutter] Merci de remplir l'adresse IP (ip) et le token (token) dans la config.");
@@ -189,35 +190,26 @@ class SomfyShutterPlatform {
     });
   
     // --- TargetPosition ---
-    coverService
-      .getCharacteristic(Characteristic.TargetPosition)
-      .onGet(() => {
-        const pos = this.lastPositions[device.deviceURL];
-        return typeof pos === "number" ? pos : 0;
-      })
-      .onSet(async (value) => {
-        try {
-          // Mise à jour immédiate côté HomeKit
-          coverService.updateCharacteristic(Characteristic.CurrentPosition, value);
-          this.lastPositions[device.deviceURL] = value;
-  
-          // Envoi commande
-          const exec = await this.sendSetPosition(device.deviceURL, value);
-          if (exec) {
-            this.currentExecutions[device.deviceURL] = exec;
-            this.log.info(
-              `[TahomaShutter] 🪟 Commande position ${value}% envoyée à "${displayName}" (${device.deviceURL}) [execId=${exec}]`
-            );
-          }
-  
-          coverService.updateCharacteristic(
-            Characteristic.PositionState,
-            Characteristic.PositionState.INCREASING
-          );
-        } catch (err) {
-          this.log.error(`[TahomaShutter] Erreur envoi TargetPosition pour "${displayName}":`, err);
+    coverService.getCharacteristic(Characteristic.TargetPosition)
+    .onSet(async (value) => {
+      try {
+        // Met à jour HomeKit uniquement TargetPosition
+        coverService.updateCharacteristic(Characteristic.TargetPosition, value);
+    
+        // Envoi commande au volet
+        const exec = await this.sendSetPosition(device.deviceURL, value);
+        if (exec) {
+          this.currentExecutions[device.deviceURL] = exec;
+          this.log.info(`[TahomaShutter] Commande Position ${value}% envoyée à ${device.deviceURL} (execId: ${exec})`);
         }
-      });
+    
+        // On ne touche pas CurrentPosition ici : le polling s'en charge
+      } catch (err) {
+        this.log.error("[TahomaShutter] Erreur envoi TargetPosition:", err);
+      }
+    });
+
+
   
     // --- PositionState ---
     coverService
@@ -256,48 +248,113 @@ class SomfyShutterPlatform {
   startPolling() {
     const interval = (this.config.pollingInterval || 10) * 1000;
     if (this.pollingTimer) clearInterval(this.pollingTimer);
+  
     this.pollingTimer = setInterval(async () => {
       try {
         const devices = await this.callTahomAPI("getDevices");
+  
         for (const accessory of this.accessoriesList) {
           const deviceURL = accessory.__deviceURL;
           if (!deviceURL) continue;
+  
           const device = devices.find(d => d.deviceURL === deviceURL);
           if (!device) continue;
-
-          const state = await this.getShutterState(deviceURL);
+  
           const coverService = accessory.__coverService;
           if (!coverService) continue;
-
-          // ExecId check
-          const execId = this.currentExecutions[deviceURL];
-          if (execId && device.executions) {
-            const exec = device.executions.find(e => e.execId === execId);
-            if (!exec || exec.status !== "IN_PROGRESS") {
-              this.currentExecutions[deviceURL] = null;
-            }
+  
+          const state = await this.getShutterState(deviceURL);
+          const currentPos = state.currentPosition;
+  
+          const lastPos = this.lastPositions[deviceURL];
+          if (this.stableCounters[deviceURL] == null) {
+            this.stableCounters[deviceURL] = 0;
           }
-
-          // Mise à jour si changement
-          if (this.lastPositions[deviceURL] !== state.currentPosition) {
-            coverService.updateCharacteristic(Characteristic.CurrentPosition, state.currentPosition);
-            coverService.updateCharacteristic(Characteristic.TargetPosition, state.targetPosition);
-            // Déduire positionState (approx)
-            const posState = (this.lastPositions[deviceURL] == null) ? Characteristic.PositionState.STOPPED :
-                             (state.currentPosition > this.lastPositions[deviceURL] ? Characteristic.PositionState.INCREASING :
-                             (state.currentPosition < this.lastPositions[deviceURL] ? Characteristic.PositionState.DECREASING :
-                              Characteristic.PositionState.STOPPED));
-            coverService.updateCharacteristic(Characteristic.PositionState, posState);
-            this.log.info(`[TahomaShutter] Changement détecté pour ${deviceURL} : ${state.currentPosition}%`);
-            this.lastPositions[deviceURL] = state.currentPosition;
+  
+          // ---------- 1️⃣ PREMIER PASSAGE ----------
+          if (lastPos == null) {
+            coverService.updateCharacteristic(
+              Characteristic.CurrentPosition,
+              currentPos
+            );
+            coverService.updateCharacteristic(
+              Characteristic.PositionState,
+              Characteristic.PositionState.STOPPED
+            );
+            coverService.updateCharacteristic(
+              Characteristic.TargetPosition,
+              currentPos
+            );
+  
+            this.lastPositions[deviceURL] = currentPos;
+            continue;
+          }
+  
+          // ---------- 2️⃣ POSITION EN MOUVEMENT ----------
+          if (currentPos !== lastPos) {
+            coverService.updateCharacteristic(
+              Characteristic.CurrentPosition,
+              currentPos
+            );
+  
+            const posState =
+              currentPos > lastPos
+                ? Characteristic.PositionState.INCREASING
+                : Characteristic.PositionState.DECREASING;
+  
+            coverService.updateCharacteristic(
+              Characteristic.PositionState,
+              posState
+            );
+  
+            this.stableCounters[deviceURL] = 0;
+            this.lastPositions[deviceURL] = currentPos;
+            continue;
+          }
+  
+          // ---------- 3️⃣ POSITION STABLE ----------
+          this.stableCounters[deviceURL]++;
+  
+          if (this.stableCounters[deviceURL] >= 2) {
+            coverService.updateCharacteristic(
+              Characteristic.PositionState,
+              Characteristic.PositionState.STOPPED
+            );
+  
+            coverService.updateCharacteristic(
+              Characteristic.TargetPosition,
+              currentPos
+            );
           }
         }
       } catch (err) {
-        this.log.error("[TahomaShutter] Erreur polling:", err.message || err);
+        this.log.error(
+          "[TahomaShutter] Erreur polling:",
+          err.message || err
+        );
       }
     }, interval);
-    this.log.info(`[TahomaShutter] Polling démarré toutes les ${interval/1000}s`);
+  
+    this.log.info(
+      `[TahomaShutter] Polling démarré toutes les ${interval / 1000}s`
+    );
   }
+  
+  async isExecutionFinished(deviceURL, execId) {
+    try {
+      const devices = await this.callTahomAPI("getDevices");
+      const device = devices.find(d => d.deviceURL === deviceURL);
+      if (!device || !device.executions) return true;
+  
+      const exec = device.executions.find(e => e.execId === execId);
+      if (!exec) return true; // déjà terminé
+      return exec.status !== "IN_PROGRESS";
+    } catch (err) {
+      this.log.error("[TahomaShutter] Erreur vérification execId:", err);
+      return true; // assume finished en cas d'erreur
+    }
+  }
+
 
   async sendSetPosition(deviceURL, homekitValue) {
     // 🔄 Conversion HomeKit → Somfy
